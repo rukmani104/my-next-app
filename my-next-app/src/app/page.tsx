@@ -6,48 +6,108 @@ import Image from "next/image";
 import { FiSend, FiPaperclip,FiChevronLeft, FiChevronRight } from "react-icons/fi";
 import MicRecorder from "@/app/MicRecorder";
 
-type Message = { role: string; text: string };
-type HistoryItem = { id: number; title: string; messages: Message[] };
+
+type Message = { role: "user" | "ai"; text: string };
+type HistoryItem = { id: string; title: string; messages: Message[]; conversationId?: string };
 
 export default function Home() {
   const [studentName, setStudentName] = useState("");
   const [studentId, setStudentId] = useState("");
   const [errors, setErrors] = useState<{ name?: string; id?: string }>({});
   const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [sessionId, setSessionId] = useState("");
 
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
-  const [isSliding, setIsSliding] = useState(false);
+  const [isSliding] = useState(false);
   const [timer, setTimer] = useState(900); // 15 minutes
   const [sessionActive, setSessionActive] = useState(true);
-  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [, setSidebarOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [history, setHistory] = useState<HistoryItem[]>([]);
+  const [, setIsLoading] = useState(false);
 
   // Validation function
   const validate = () => {
     const newErrors: { name?: string; id?: string } = {};
 
-    // Student Name → three words, alphabets only
-    const namePattern = /^[A-Za-z]+ [A-Za-z]+ [A-Za-z]+$/;
+    // Student Name → two words, alphabets only
+    const namePattern = /^[A-Za-z]+ [A-Za-z]+$/;
     if (!namePattern.test(studentName.trim())) {
-      newErrors.name = "Enter first, middle, and last name (alphabets only).";
+      newErrors.name = "Enter first and last name (alphabets only).";
     }
 
-    // Student ID → exactly 3 digits
-    const idPattern = /^\d{3}$/;
+    // ID → exactly 2 digits
+    const idPattern = /^\d{2}$/;
     if (!idPattern.test(studentId.trim())) {
-      newErrors.id = "Student ID must be exactly 3 digits.";
+      newErrors.id = "ID must be exactly 2 digits.";
     }
 
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
 
-  const handleLogin = () => {
+  type AuthSuccess = {
+    success: true;
+    sessionId: string;
+    student: { studentId: string; name: string; lastLogin: string };
+  };
+
+  type AuthFailure = { success: false; message: string };
+
+  const handleLogin = async () => {
     if (validate()) {
-      setIsAuthenticated(true);
-      setSessionActive(true);
-      setTimer(900);
+      setIsLoading(true);
+      try {
+        // Authenticate with backend
+        const response = await fetch('/api/auth', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ 
+            id: studentId.trim(), 
+            name: studentName.trim() 
+          })
+        });
+        
+        const data: AuthSuccess | AuthFailure = await response.json();
+        
+        if (data.success) {
+          setIsAuthenticated(true);
+          setSessionActive(true);
+          setTimer(900);
+          setSessionId(data.sessionId);
+          
+          // Load conversation history
+          await loadConversationHistory();
+        } else {
+          setErrors({ name: data.message });
+        }
+      } catch (error) {
+        console.error('Login error:', error);
+        setErrors({ name: 'Failed to connect to server' });
+      } finally {
+        setIsLoading(false);
+      }
+    }
+  };
+
+  type ConversationDTO = { id?: string; title: string; messages?: { role: "user" | "ai"; text: string }[] };
+  const loadConversationHistory = async () => {
+    try {
+      const response = await fetch(`/api/history?id=${studentId}&limit=10`);
+      const data = await response.json();
+      
+      if (data.success) {
+        const formattedHistory = (data.conversations as ConversationDTO[]).map((conv, index) => ({
+          id: (conv.id ?? String(index + 1)),
+          title: conv.title,
+          messages: (conv.messages ?? []).map((m) => ({ role: m.role, text: String(m.text || "") })),
+          conversationId: conv.id,
+        }));
+        setHistory(formattedHistory);
+      }
+    } catch (error) {
+      console.error('Error loading history:', error);
     }
   };
 
@@ -97,7 +157,12 @@ export default function Home() {
       const res = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message: userMessage }),
+        body: JSON.stringify({ 
+          message: userMessage,
+          id: studentId.trim(),
+          sessionId,
+          messages
+        }),
       });
 
       const data = await res.json();
@@ -110,24 +175,7 @@ export default function Home() {
     }
   };
 
-  const [history] = useState<HistoryItem[]>([
-    {
-      id: 1,
-      title: "Math Doubts",
-      messages: [
-        { role: "user", text: "I need help with algebra" },
-        { role: "ai", text: "Sure! Let’s solve it step by step." },
-      ],
-    },
-    {
-      id: 2,
-      title: "Exam Prep",
-      messages: [
-        { role: "user", text: "How to prepare for science test?" },
-        { role: "ai", text: "Focus on NCERT, practice diagrams!" },
-      ],
-    },
-  ]);
+  // History is now loaded from the database via loadConversationHistory()
 
   useEffect(() => {
     if (!isAuthenticated || !sessionActive) return;
@@ -211,7 +259,7 @@ export default function Home() {
 
             <input
               type="text"
-              placeholder="Student ID"
+              placeholder="ID"
               value={studentId}
               onChange={(e) => setStudentId(e.target.value)}
               className={`w-full border rounded-lg p-3 mb-2 focus:ring-2 focus:ring-indigo-500 ${
@@ -232,7 +280,7 @@ export default function Home() {
         </div>
       </div>
     );
-  }
+  } 
 
   // ---------- CHAT PAGE ----------
   return (
@@ -316,10 +364,10 @@ export default function Home() {
               } px-64`}
             >
               <span
-                className={`px-4 text-lg max-w-[70%] ${
+                className={`px-4 text-lg max-w-[70%] rounded-2xl ${
                   m.role === "user"
-                    ? "bg-gray-200"
-                    : "bg-purple-400 text-white"
+                    ? "bg-gray-100"
+                    : "bg-blue-400 text-white"
                 }`}
                 dangerouslySetInnerHTML={{ __html: m.text }}
               />
@@ -334,15 +382,16 @@ export default function Home() {
           <>
             <motion.div
               animate={{ x: isSliding ? 50 : 0 }}
-              transition={{ type: "spring", stiffness: 300 }}
-              className="fixed bottom-20 right-10 z-10"
+              transition={{ type: "spring", stiffness: 50 }}
+              className="fixed bottom-20 right-5 z-10"
             >
               <Image
                 src="/counsellor.png"
                 alt="Counsellor"
                 width={250}
                 height={250}
-                className="rounded-3xl drop-shadow-lg mr-35"
+                className="rounded-full outline-offset-4 drop-shadow-rounded mr-8 relative z-10 
+               border-2 border-white/40 shadow-3xl shadow-blue-500/25"
               />
             </motion.div>
           </>
@@ -386,3 +435,5 @@ export default function Home() {
     </div>
   );
 }
+
+
