@@ -1,4 +1,4 @@
-import clientPromise from "@/lib/mongodb";
+import clientPromise from "./mongodb";
 
 export class DatabaseService {
   private static instance: DatabaseService;

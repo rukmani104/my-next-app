@@ -2,8 +2,8 @@
 
 import { NextResponse } from "next/server";
 import { ChatGoogleGenerativeAI } from "@langchain/google-genai";
-import clientPromise from "@/lib/mongodb"; // This import now works correctly
-import { getStudentStore } from "@/lib/studentStore";
+import clientPromise from "@/lib/models/mongodb";// This import now works correctly
+import { getStudentStore } from "@/lib/models/studentStore";
 
 /**
  * Utility: Format Gemini response into clean paragraphs without markdown.
@@ -118,7 +118,7 @@ class DatabaseService {
 
   async getStudentById(id: string) {
     const client = await clientPromise;
-    return client.db("studentdb").collection("students").findOne({ id });
+    return client.db("studentdb").collection("students").findOne({ studentId: id });
   }
 
   async saveConversation(studentId: string, sessionId: string, messages: { role: string; text: string }[]) {
@@ -176,6 +176,8 @@ export async function POST(req: Request) {
     const resolvedStudentId = (id ?? studentId) as string | undefined;
     if (resolvedStudentId && sessionId) {
       const student = await db.getStudentById(resolvedStudentId);
+
+      // console.log('Fetched student:', student);
       if (!student) {
         return NextResponse.json(
           { reply: "⚠️ Student not found. Please login again." },
@@ -196,6 +198,7 @@ export async function POST(req: Request) {
 
       // Limit docs to avoid overloading Gemini
       const retriever = store.asRetriever();
+      console.log('Retriever created for student store.',retriever);
       const docs = await retriever.getRelevantDocuments(message);
       const context = docs
         .map((d) => d.pageContent)

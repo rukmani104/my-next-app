@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { DatabaseService } from '@/lib/database';
+import { DatabaseService } from '@/lib/models/database';
 
 export async function POST(req: Request) {
   try {
@@ -66,9 +66,11 @@ export async function POST(req: Request) {
       // Fallback: GET students list and match by id and name
       const listRes = await fetch(authApiUrl, {
         method: 'GET',
-        headers: apiToken ? { 'Authorization': `Bearer ${apiToken}` } : undefined,
+        headers: apiToken ? { 'X-API-TOKEN': `${apiToken}` } : undefined,
         cache: 'no-store',
       });
+
+      console.log('External API GET response status:', listRes);
       if (!listRes.ok) {
         return NextResponse.json(
           { success: false, message: 'Authentication failed' },
@@ -211,6 +213,8 @@ export async function GET(req: Request) {
     
     const db = DatabaseService.getInstance();
     const student = await db.getStudentById(studentId);
+
+    console.log('Fetched student:', student);
     
     if (!student) {
       return NextResponse.json(

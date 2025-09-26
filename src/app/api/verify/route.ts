@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { DatabaseService } from '@/lib/database';
+import { DatabaseService } from '@/lib/models/database';
 import { apiGet } from '@/utils/api';
 
 export async function POST(req: Request) {
